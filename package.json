@@ -2,8 +2,12 @@
   "publisher": "xjccc",
   "name": "upload-to-alioss",
   "displayName": "upload-to-alioss",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "it is a extension for users upload to ali oss",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/xjccc/upload-to-alioss"
+  },
   "categories": [
     "Other"
   ],
@@ -53,7 +57,8 @@
     "test": "vscode-test"
   },
   "dependencies": {
-    "dotenv": "^16.5.0"
+    "dotenv": "^16.5.0",
+    "tinify": "^1.8.0"
   },
   "devDependencies": {
     "@antfu/eslint-config": "^4.13.2",
