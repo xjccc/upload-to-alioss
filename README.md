@@ -9,12 +9,14 @@ VSCode 插件：一键上传文件或文件夹到阿里云 OSS，并在输出面
 - 支持命令面板（Cmd/Ctrl+Shift+P）手动选择文件上传
 - 上传结果、失败、警告等信息全部输出到"OSS上传结果"输出面板，便于复制和查看
 - 支持自动读取/补全 .env 环境变量配置，首次填写后自动写入 .env
+- **支持图片压缩**：如配置了 `TINIFY_KEY`，上传 png/jpg/jpeg 图片时会自动用 [tinify](https://tinypng.com/) 压缩后再上传，无则直接上传原图
 
 ## 快速开始
 
 1. **安装依赖**
    - 需在项目根目录下有 .env 文件（首次上传时可自动生成）
    - 需有阿里云 OSS 账号和 Bucket
+   - 如需图片压缩，需注册 tinify.com 并获取 API Key
 
 2. **配置 .env**（示例）
 
@@ -25,6 +27,7 @@ OSS_BUCKET=你的Bucket名称
 OSS_REGION=oss-cn-beijing
 OSS_PATH=your-default-paths
 OSS_URL_PREFIX=https://your-cdn-domain
+TINIFY_KEY=你的TinifyApiKey # 可选，配置后自动压缩图片
 ```
 
 3. **使用方式**
@@ -53,6 +56,7 @@ OSS_URL_PREFIX=https://your-cdn-domain
 - `OSS_REGION`：Region（如 oss-cn-beijing）
 - `OSS_PATH`：上传时的默认 OSS 路径前缀（可选）
 - `OSS_URL_PREFIX`：上传后访问链接的自定义前缀（如 CDN 域名，可选）
+- `TINIFY_KEY`：Tinify API Key，配置后自动压缩图片（可选）
 
 ## 注意事项
 
@@ -60,6 +64,7 @@ OSS_URL_PREFIX=https://your-cdn-domain
 - 插件会自动补全缺失的 OSS 配置到 .env
 - 仅支持上传文件夹下的一级文件（不递归子目录）
 - 输出面板可纵向查看所有上传结果
+- 图片压缩仅支持 png/jpg/jpeg 格式，压缩后临时文件自动清理
 
 ## 常见问题
 
@@ -67,6 +72,8 @@ OSS_URL_PREFIX=https://your-cdn-domain
   - 请在"输出"面板切换到"OSS上传结果"查看详细日志
 - **配置缺失？**
   - 首次上传时会自动弹窗补全并写入 .env
+- **图片未压缩？**
+  - 请检查 .env 是否正确配置 TINIFY_KEY，且图片为 png/jpg/jpeg 格式
 
 ## License
 

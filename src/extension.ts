@@ -1,8 +1,11 @@
+import { randomBytes } from 'node:crypto'
 import { createReadStream, existsSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
-import { homedir } from 'node:os'
-import { join } from 'node:path'
+import * as fs from 'node:fs'
+import { homedir, tmpdir } from 'node:os'
+import { basename, dirname, extname, join } from 'node:path'
 import OSS from 'ali-oss'
 import dotenv from 'dotenv'
+import tinify from 'tinify'
 // The module 'vscode' contains the VS Code extensibility API
 // Import the module and reference it with the alias vscode in your code below
 import vscode from 'vscode'
@@ -32,13 +35,15 @@ function getOssConfig() {
   const region = process.env.OSS_REGION
   const ossPath = process.env.OSS_PATH || ''
   const urlPrefix = process.env.OSS_URL_PREFIX || ''
+  const tinifyKey = process.env.TINIFY_KEY || ''
   return {
     accessKeyId,
     accessKeySecret,
     bucket,
     region,
     ossPath,
-    urlPrefix
+    urlPrefix,
+    tinifyKey
   }
 }
 
@@ -150,6 +155,26 @@ async function ensureOssConfigAndClient(config: ReturnType<typeof getOssConfig>)
   }
 }
 
+function isImage(file: string) {
+  return /\.(png|jpe?g)$/i.test(file)
+}
+
+async function compressImageIfNeeded(filePath: string, tinifyKey: string): Promise<string> {
+  if (!tinifyKey || !isImage(filePath)) return filePath
+  try {
+    tinify.key = tinifyKey
+    const ext = extname(filePath)
+    const tmpName = `${basename(filePath, ext)}-${randomBytes(6).toString('hex')}${ext}`
+    const compressedPath = join(tmpdir(), tmpName)
+    const source = tinify.fromFile(filePath)
+    await source.toFile(compressedPath)
+    return compressedPath
+  } catch (e) {
+    console.error(e)
+    return filePath
+  }
+}
+
 // This method is called when your extension is activated
 // Your extension is activated the very first time the command is executed
 export function activate(context: vscode.ExtensionContext) {
@@ -206,14 +231,21 @@ export function activate(context: vscode.ExtensionContext) {
     const fileName = filePath.split(/[\\/]/).pop() || 'upload.file'
     const ossObjectKey = (uploadPath || '') + fileName
 
+    const uploadFilePath = await compressImageIfNeeded(filePath, config.tinifyKey)
     try {
-      const result = await client.put(ossObjectKey, createReadStream(filePath))
+      const result = await client.put(ossObjectKey, createReadStream(uploadFilePath))
       const customUrl = config.urlPrefix ? `${config.urlPrefix}/${ossObjectKey}` : result.url
       output.appendLine(`上传成功: ${customUrl}`)
       output.show(true)
     } catch (err: any) {
       output.appendLine(`上传失败: ${err.message || err}`)
       output.show(true)
+    } finally {
+      if (dirname(uploadFilePath) === tmpdir() && uploadFilePath !== filePath) {
+        try {
+          fs.unlinkSync(uploadFilePath)
+        } catch {}
+      }
     }
   })
 
@@ -255,13 +287,20 @@ export function activate(context: vscode.ExtensionContext) {
     }
     for (const file of files) {
       const filePath = join(folderPath, file)
+      const uploadFilePath = await compressImageIfNeeded(filePath, config.tinifyKey)
       const ossObjectKey = (uploadPath || '') + file
       try {
-        const result = await client.put(ossObjectKey, createReadStream(filePath))
+        const result = await client.put(ossObjectKey, createReadStream(uploadFilePath))
         const customUrl = config.urlPrefix ? `${config.urlPrefix}/${ossObjectKey}` : result.url
         output.appendLine(`上传成功: ${customUrl}`)
       } catch (err: any) {
         output.appendLine(`上传失败: ${file} - ${err.message || err}`)
+      } finally {
+        if (dirname(uploadFilePath) === tmpdir() && uploadFilePath !== filePath) {
+          try {
+            fs.unlinkSync(uploadFilePath)
+          } catch {}
+        }
       }
     }
     output.appendLine('全部上传完成')

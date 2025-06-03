@@ -2,8 +2,12 @@
   "publisher": "xjccc",
   "name": "upload-to-alioss",
   "displayName": "upload-to-alioss",
-  "version": "0.0.1",
+  "version": "0.0.3",
   "description": "it is a extension for users upload to ali oss",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/xjccc/upload-to-alioss"
+  },
   "categories": [
     "Other"
   ],
@@ -50,10 +54,12 @@
     "pretest": "npm run compile-tests && npm run compile && npm run lint",
     "check-types": "tsc --noEmit",
     "lint": "eslint .",
-    "test": "vscode-test"
+    "test": "vscode-test",
+    "release": "changelogen --release && git push --follow-tags"
   },
   "dependencies": {
-    "dotenv": "^16.5.0"
+    "dotenv": "^16.5.0",
+    "tinify": "^1.8.0"
   },
   "devDependencies": {
     "@antfu/eslint-config": "^4.13.2",
@@ -65,6 +71,7 @@
     "@vscode/test-cli": "^0.0.10",
     "@vscode/test-electron": "^2.5.2",
     "ali-oss": "^6.23.0",
+    "changelogen": "^0.6.1",
     "esbuild": "^0.25.3",
     "eslint": "^9.27.0",
     "eslint-config-prettier": "^10.1.5",
