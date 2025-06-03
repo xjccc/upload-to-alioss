@@ -1,28 +1,34 @@
-import typescriptEslint from "@typescript-eslint/eslint-plugin";
-import tsParser from "@typescript-eslint/parser";
+// eslint.config.mjs
+import antfu from '@antfu/eslint-config'
+import eslintPluginPrettierRecommended from 'eslint-plugin-prettier/recommended'
 
-export default [{
-    files: ["**/*.ts"],
-}, {
-    plugins: {
-        "@typescript-eslint": typescriptEslint,
-    },
-
-    languageOptions: {
-        parser: tsParser,
-        ecmaVersion: 2022,
-        sourceType: "module",
-    },
-
+export default antfu(
+  {
+    typescript: true,
+    vue: true,
+    md: true,
+    stylistic: false,
+    lessOpinionated: true
+  },
+  {
+    ignores: ['dist', 'out']
+  },
+  eslintPluginPrettierRecommended,
+  {
     rules: {
-        "@typescript-eslint/naming-convention": ["warn", {
-            selector: "import",
-            format: ["camelCase", "PascalCase"],
-        }],
-
-        curly: "warn",
-        eqeqeq: "warn",
-        "no-throw-literal": "warn",
-        semi: "warn",
-    },
-}];
+      'vue/block-order': 0,
+      'no-console': 0,
+      'node/prefer-global/process': 0,
+      'function-paren-newline': ['error', 'multiline'],
+      'object-property-newline': ['error', { allowAllPropertiesOnSameLine: false }],
+      'object-curly-spacing': ['error', 'always'],
+      'object-curly-newline': [
+        'error',
+        {
+          multiline: true,
+          consistent: true
+        }
+      ]
+    }
+  }
+)

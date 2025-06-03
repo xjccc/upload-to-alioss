@@ -1,164 +1,274 @@
+import { createReadStream, existsSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import { homedir } from 'node:os'
+import { join } from 'node:path'
+import OSS from 'ali-oss'
+import dotenv from 'dotenv'
 // The module 'vscode' contains the VS Code extensibility API
 // Import the module and reference it with the alias vscode in your code below
-import * as vscode from 'vscode';
-import OSS from 'ali-oss';
-import * as fs from 'fs';
-import * as path from 'path';
-import * as dotenv from 'dotenv';
+import vscode from 'vscode'
 
 // 获取 VSCode 当前打开的第一个工作区根目录
-const workspaceFolders = vscode.workspace.workspaceFolders;
-let envPath: string | undefined = undefined;
+const workspaceFolders = vscode.workspace.workspaceFolders
+let envPath: string | undefined
 
 if (workspaceFolders && workspaceFolders.length > 0) {
-	envPath = path.join(workspaceFolders[0].uri.fsPath, '.env');
+  envPath = join(workspaceFolders[0].uri.fsPath, '.env')
 } else {
-	// 可选：如果没有打开工作区，可以考虑加载用户主目录下的 .env
-	// envPath = path.join(require('os').homedir(), '.env');
+  // 可选：如果没有打开工作区，可以考虑加载用户主目录下的 .env
+  envPath = join(homedir(), '.env')
 }
 
+const envPathGlobal = envPath
 if (envPath) {
-	dotenv.config({ path: envPath });
+  dotenv.config({ path: envPath })
 } else {
-	dotenv.config(); // fallback
+  dotenv.config() // fallback
 }
 
 function getOssConfig() {
-	const accessKeyId = process.env.OSS_ACCESS_KEY_ID;
-	const accessKeySecret = process.env.OSS_ACCESS_KEY_SECRET;
-	const bucket = process.env.OSS_BUCKET;
-	const region = process.env.OSS_REGION;
-	const ossPath = process.env.OSS_PATH || '';
-	return { accessKeyId, accessKeySecret, bucket, region, ossPath };
+  const accessKeyId = process.env.OSS_ACCESS_KEY_ID
+  const accessKeySecret = process.env.OSS_ACCESS_KEY_SECRET
+  const bucket = process.env.OSS_BUCKET
+  const region = process.env.OSS_REGION
+  const ossPath = process.env.OSS_PATH || ''
+  const urlPrefix = process.env.OSS_URL_PREFIX || ''
+  return {
+    accessKeyId,
+    accessKeySecret,
+    bucket,
+    region,
+    ossPath,
+    urlPrefix
+  }
+}
+
+function updateEnvFile(newConfig: Record<string, string>) {
+  const envPath = envPathGlobal
+  if (!envPath) return
+  let envContent = ''
+  if (existsSync(envPath)) {
+    envContent = readFileSync(envPath, 'utf-8')
+  }
+  const envLines = envContent.split('\n').filter(Boolean)
+  const envObj: Record<string, string> = {}
+  envLines.forEach((line) => {
+    const [key, ...rest] = line.split('=')
+    envObj[key] = rest.join('=')
+  })
+  // 只更新这四个OSS配置
+  if (newConfig.OSS_ACCESS_KEY_ID) envObj.OSS_ACCESS_KEY_ID = newConfig.OSS_ACCESS_KEY_ID
+  if (newConfig.OSS_ACCESS_KEY_SECRET) envObj.OSS_ACCESS_KEY_SECRET = newConfig.OSS_ACCESS_KEY_SECRET
+  if (newConfig.OSS_BUCKET) envObj.OSS_BUCKET = newConfig.OSS_BUCKET
+  if (newConfig.OSS_REGION) envObj.OSS_REGION = newConfig.OSS_REGION
+  // 重新拼接
+  const newEnvContent = Object.entries(envObj)
+    .map(([k, v]) => `${k}=${v}`)
+    .join('\n')
+  writeFileSync(envPath, newEnvContent, 'utf-8')
+}
+
+async function ensureOssConfigAndClient(config: ReturnType<typeof getOssConfig>) {
+  let { accessKeyId, accessKeySecret, bucket, region } = config
+
+  if (!accessKeyId || !accessKeySecret || !bucket || !region) {
+    accessKeyId =
+      (await vscode.window.showInputBox({
+        prompt: '请输入阿里云OSS AccessKeyId',
+        value: accessKeyId
+      })) || ''
+    if (!accessKeyId)
+      return {
+        client: null,
+        config: null
+      }
+
+    accessKeySecret =
+      (await vscode.window.showInputBox({
+        prompt: '请输入阿里云OSS AccessKeySecret',
+        password: true,
+        value: accessKeySecret
+      })) || ''
+    if (!accessKeySecret)
+      return {
+        client: null,
+        config: null
+      }
+
+    bucket =
+      (await vscode.window.showInputBox({
+        prompt: '请输入Bucket名称',
+        value: bucket
+      })) || ''
+    if (!bucket)
+      return {
+        client: null,
+        config: null
+      }
+
+    region =
+      (await vscode.window.showInputBox({
+        prompt: '请输入Region，例如oss-cn-beijing',
+        value: region
+      })) || ''
+    if (!region)
+      return {
+        client: null,
+        config: null
+      }
+
+    updateEnvFile({
+      OSS_ACCESS_KEY_ID: accessKeyId,
+      OSS_ACCESS_KEY_SECRET: accessKeySecret,
+      OSS_BUCKET: bucket,
+      OSS_REGION: region
+    })
+  }
+
+  try {
+    const client = new OSS({
+      region,
+      accessKeyId,
+      accessKeySecret,
+      bucket
+    })
+    return {
+      client,
+      config: {
+        ...config,
+        accessKeyId,
+        accessKeySecret,
+        bucket,
+        region
+      }
+    }
+  } catch (e: any) {
+    vscode.window.showErrorMessage(e.message || 'OSS初始化失败')
+    return {
+      client: null,
+      config: null
+    }
+  }
 }
 
 // This method is called when your extension is activated
 // Your extension is activated the very first time the command is executed
 export function activate(context: vscode.ExtensionContext) {
+  // Use the console to output diagnostic information (console.log) and errors (console.error)
+  // This line of code will only be executed once when your extension is activated
+  console.log('Congratulations, your extension "upload-to-alioss" is now active!')
 
-	// Use the console to output diagnostic information (console.log) and errors (console.error)
-	// This line of code will only be executed once when your extension is activated
-	console.log('Congratulations, your extension "upload-to-alioss" is now active!');
+  const output = vscode.window.createOutputChannel('OSS上传结果')
 
-	// The command has been defined in the package.json file
-	// Now provide the implementation of the command with registerCommand
-	// The commandId parameter must match the command field in package.json
-	const disposable = vscode.commands.registerCommand('upload-to-alioss.helloWorld', () => {
-		// The code you place here will be executed every time your command is executed
-		// Display a message box to the user
-		vscode.window.showInformationMessage('Hello World from upload-to-alioss!');
-	});
+  const uploadDisposable = vscode.commands.registerCommand('upload-to-alioss.uploadFile', async (uri?: vscode.Uri) => {
+    let filePath: string | undefined
+    if (uri && uri.fsPath && existsSync(uri.fsPath) && statSync(uri.fsPath).isFile()) {
+      // 右键文件
+      filePath = uri.fsPath
+    } else {
+      // 命令面板
+      const fileUri = await vscode.window.showOpenDialog({
+        canSelectMany: false,
+        openLabel: '选择要上传的文件'
+      })
+      if (!fileUri || fileUri.length === 0) {
+        output.appendLine('未选择文件')
+        output.show(true)
+        return
+      }
+      filePath = fileUri[0].fsPath
+    }
+    if (!filePath) {
+      output.appendLine('未选择文件')
+      output.show(true)
+      return
+    }
 
-	context.subscriptions.push(disposable);
+    const { client, config } = await ensureOssConfigAndClient(getOssConfig())
+    if (!client || !config) {
+      output.appendLine('OSS配置缺失或初始化失败，请检查.env或手动输入配置')
+      output.show(true)
+      return
+    }
 
-	const uploadDisposable = vscode.commands.registerCommand('upload-to-alioss.uploadFile', async (uri?: vscode.Uri) => {
-		let filePath: string | undefined;
-		if (uri && uri.fsPath && fs.existsSync(uri.fsPath) && fs.statSync(uri.fsPath).isFile()) {
-			// 右键文件
-			filePath = uri.fsPath;
-		} else {
-			// 命令面板
-			const fileUri = await vscode.window.showOpenDialog({
-				canSelectMany: false,
-				openLabel: '选择要上传的文件',
-			});
-			if (!fileUri || fileUri.length === 0) {
-				vscode.window.showWarningMessage('未选择文件');
-				return;
-			}
-			filePath = fileUri[0].fsPath;
-		}
-		if (!filePath) {return;}
+    let uploadPath = await vscode.window.showInputBox({
+      prompt: '请输入OSS目标路径（可带子目录）',
+      value: config.ossPath
+    })
+    if (uploadPath === undefined) {
+      output.appendLine('未填写OSS目标路径')
+      output.show(true)
+      return
+    }
+    if (uploadPath && !uploadPath.endsWith('/')) {
+      uploadPath += '/'
+    }
 
-		const { accessKeyId, accessKeySecret, bucket, region, ossPath } = getOssConfig();
-		let uploadPath = await vscode.window.showInputBox({ prompt: '请输入OSS目标路径（可带子目录）', value: ossPath });
-		if (uploadPath === undefined) {return;}
-		if (uploadPath && !uploadPath.endsWith('/')) {uploadPath += '/';}
+    const fileName = filePath.split(/[\\/]/).pop() || 'upload.file'
+    const ossObjectKey = (uploadPath || '') + fileName
 
-		let finalAccessKeyId = accessKeyId;
-		let finalAccessKeySecret = accessKeySecret;
-		let finalBucket = bucket;
-		let finalRegion = region;
+    try {
+      const result = await client.put(ossObjectKey, createReadStream(filePath))
+      const customUrl = config.urlPrefix ? `${config.urlPrefix}/${ossObjectKey}` : result.url
+      output.appendLine(`上传成功: ${customUrl}`)
+      output.show(true)
+    } catch (err: any) {
+      output.appendLine(`上传失败: ${err.message || err}`)
+      output.show(true)
+    }
+  })
 
-		if (!accessKeyId || !accessKeySecret || !bucket || !region) {
-			finalAccessKeyId = await vscode.window.showInputBox({ prompt: '请输入阿里云OSS AccessKeyId', value: accessKeyId });
-			if (!finalAccessKeyId) {return;}
-			finalAccessKeySecret = await vscode.window.showInputBox({ prompt: '请输入阿里云OSS AccessKeySecret', password: true, value: accessKeySecret });
-			if (!finalAccessKeySecret) {return;}
-			finalBucket = await vscode.window.showInputBox({ prompt: '请输入Bucket名称', value: bucket });
-			if (!finalBucket) {return;}
-			finalRegion = await vscode.window.showInputBox({ prompt: '请输入Region，例如oss-cn-hangzhou', value: region });
-			if (!finalRegion) {return;}
-		}
+  context.subscriptions.push(uploadDisposable)
 
-		const client = new OSS({
-			region: finalRegion!,
-			accessKeyId: finalAccessKeyId!,
-			accessKeySecret: finalAccessKeySecret!,
-			bucket: finalBucket!,
-		});
+  const uploadFolderDisposable = vscode.commands.registerCommand('upload-to-alioss.uploadFolder', async (uri: vscode.Uri) => {
+    const folderPath = uri?.fsPath
+    if (!folderPath || !existsSync(folderPath) || !statSync(folderPath).isDirectory()) {
+      output.appendLine('请选择有效的文件夹')
+      output.show(true)
+      return
+    }
 
-		const fileName = filePath.split(/[\\/]/).pop() || 'upload.file';
-		const ossObjectKey = (uploadPath || '') + fileName;
+    const { client, config } = await ensureOssConfigAndClient(getOssConfig())
+    if (!client || !config) {
+      output.appendLine('OSS配置缺失或初始化失败，请检查.env或手动输入配置')
+      output.show(true)
+      return
+    }
 
-		try {
-			const result = await client.put(ossObjectKey, fs.createReadStream(filePath));
-			await vscode.window.showInformationMessage(`上传成功: ${result.url}`, '复制链接').then(action => {
-				if (action === '复制链接') {
-					vscode.env.clipboard.writeText(result.url);
-					vscode.window.showInformationMessage('链接已复制到剪贴板');
-				}
-			});
-		} catch (err: any) {
-			vscode.window.showErrorMessage(`上传失败: ${err.message || err}`);
-		}
-	});
+    let uploadPath = await vscode.window.showInputBox({
+      prompt: '请输入OSS目标路径（可带子目录）',
+      value: config.ossPath
+    })
+    if (uploadPath === undefined) {
+      output.appendLine('未填写OSS目标路径')
+      output.show(true)
+      return
+    }
+    if (uploadPath && !uploadPath.endsWith('/')) {
+      uploadPath += '/'
+    }
 
-	context.subscriptions.push(uploadDisposable);
+    const files = readdirSync(folderPath).filter((f) => statSync(join(folderPath, f)).isFile())
+    if (files.length === 0) {
+      output.appendLine('文件夹下没有文件可上传')
+      output.show(true)
+      return
+    }
+    for (const file of files) {
+      const filePath = join(folderPath, file)
+      const ossObjectKey = (uploadPath || '') + file
+      try {
+        const result = await client.put(ossObjectKey, createReadStream(filePath))
+        const customUrl = config.urlPrefix ? `${config.urlPrefix}/${ossObjectKey}` : result.url
+        output.appendLine(`上传成功: ${customUrl}`)
+      } catch (err: any) {
+        output.appendLine(`上传失败: ${file} - ${err.message || err}`)
+      }
+    }
+    output.appendLine('全部上传完成')
+    output.show(true)
+  })
 
-	const uploadFolderDisposable = vscode.commands.registerCommand('upload-to-alioss.uploadFolder', async (uri: vscode.Uri) => {
-		const folderPath = uri?.fsPath;
-		if (!folderPath || !fs.existsSync(folderPath) || !fs.statSync(folderPath).isDirectory()) {
-			vscode.window.showErrorMessage('请选择有效的文件夹');
-			return;
-		}
-
-		const { accessKeyId, accessKeySecret, bucket, region, ossPath } = getOssConfig();
-		if (!accessKeyId || !accessKeySecret || !bucket || !region) {
-			vscode.window.showErrorMessage('OSS配置缺失，请在根目录添加.env文件并设置 OSS_ACCESS_KEY_ID, OSS_ACCESS_KEY_SECRET, OSS_BUCKET, OSS_REGION');
-			return;
-		}
-
-		let uploadPath = await vscode.window.showInputBox({ prompt: '请输入OSS目标路径（可带子目录）', value: ossPath });
-		if (uploadPath === undefined) {return;}
-		if (uploadPath && !uploadPath.endsWith('/')) {uploadPath += '/';}
-
-		const client = new OSS({ region, accessKeyId, accessKeySecret, bucket });
-
-		const files = fs.readdirSync(folderPath).filter(f => fs.statSync(path.join(folderPath, f)).isFile());
-		if (files.length === 0) {
-			vscode.window.showWarningMessage('文件夹下没有文件可上传');
-			return;
-		}
-
-		for (const file of files) {
-			const filePath = path.join(folderPath, file);
-			const ossObjectKey = (uploadPath || '') + file;
-			try {
-				const result = await client.put(ossObjectKey, fs.createReadStream(filePath));
-				await vscode.window.showInformationMessage(`上传成功: ${result.url}`, '复制链接').then(action => {
-					if (action === '复制链接') {
-						vscode.env.clipboard.writeText(result.url);
-						vscode.window.showInformationMessage('链接已复制到剪贴板');
-					}
-				});
-			} catch (err: any) {
-				vscode.window.showErrorMessage(`上传失败: ${file} - ${err.message || err}`);
-			}
-		}
-	});
-
-	context.subscriptions.push(uploadFolderDisposable);
+  context.subscriptions.push(uploadFolderDisposable)
 }
 
 // This method is called when your extension is deactivated
