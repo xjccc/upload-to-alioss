@@ -16,7 +16,7 @@ export default antfu(
   eslintPluginPrettierRecommended,
   {
     rules: {
-      'vue/block-order': 0,
+      'regexp/no-unused-capturing-group': 0,
       'no-console': 0,
       'node/prefer-global/process': 0,
       'function-paren-newline': ['error', 'multiline'],
