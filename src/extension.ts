@@ -184,15 +184,18 @@ export function activate(context: vscode.ExtensionContext) {
 
   const output = vscode.window.createOutputChannel('OSS上传结果')
 
-  const uploadDisposable = vscode.commands.registerCommand('upload-to-alioss.uploadFile', async (uri?: vscode.Uri) => {
-    let filePath: string | undefined
-    if (uri && uri.fsPath && existsSync(uri.fsPath) && statSync(uri.fsPath).isFile()) {
-      // 右键文件
-      filePath = uri.fsPath
+  const uploadDisposable = vscode.commands.registerCommand('upload-to-alioss.uploadFile', async (uri, uris) => {
+    let filePaths: string[] = []
+
+    // 资源管理器多选或单选
+    if (uris && Array.isArray(uris) && uris.length > 0) {
+      filePaths = uris.filter((u) => u && u.fsPath && existsSync(u.fsPath) && statSync(u.fsPath).isFile()).map((u) => u.fsPath)
+    } else if (uri && uri.fsPath && existsSync(uri.fsPath) && statSync(uri.fsPath).isFile()) {
+      filePaths = [uri.fsPath]
     } else {
-      // 命令面板
+      // 命令面板，弹出多选文件框
       const fileUri = await vscode.window.showOpenDialog({
-        canSelectMany: false,
+        canSelectMany: true,
         openLabel: '选择要上传的文件'
       })
       if (!fileUri || fileUri.length === 0) {
@@ -200,9 +203,10 @@ export function activate(context: vscode.ExtensionContext) {
         output.show(true)
         return
       }
-      filePath = fileUri[0].fsPath
+      filePaths = fileUri.map((f) => f.fsPath)
     }
-    if (!filePath) {
+
+    if (!filePaths.length) {
       output.appendLine('未选择文件')
       output.show(true)
       return
@@ -228,25 +232,26 @@ export function activate(context: vscode.ExtensionContext) {
       uploadPath += '/'
     }
 
-    const fileName = filePath.split(/[\\/]/).pop() || 'upload.file'
-    const ossObjectKey = (uploadPath || '') + fileName
-
-    const uploadFilePath = await compressImageIfNeeded(filePath, config.tinifyKey)
-    try {
-      const result = await client.put(ossObjectKey, createReadStream(uploadFilePath))
-      const customUrl = config.urlPrefix ? `${config.urlPrefix}/${ossObjectKey}` : result.url
-      output.appendLine(`上传成功: ${customUrl}`)
-      output.show(true)
-    } catch (err: any) {
-      output.appendLine(`上传失败: ${err.message || err}`)
-      output.show(true)
-    } finally {
-      if (dirname(uploadFilePath) === tmpdir() && uploadFilePath !== filePath) {
-        try {
-          fs.unlinkSync(uploadFilePath)
-        } catch {}
+    for (const filePath of filePaths) {
+      const fileName = filePath.split(/[\\/]/).pop() || 'upload.file'
+      const ossObjectKey = (uploadPath || '') + fileName
+      const uploadFilePath = await compressImageIfNeeded(filePath, config.tinifyKey)
+      try {
+        const result = await client.put(ossObjectKey, createReadStream(uploadFilePath))
+        const customUrl = config.urlPrefix ? `${config.urlPrefix}/${ossObjectKey}` : result.url
+        output.appendLine(`上传成功: ${customUrl}`)
+      } catch (err: any) {
+        output.appendLine(`上传失败: ${fileName} - ${err.message || err}`)
+      } finally {
+        if (dirname(uploadFilePath) === tmpdir() && uploadFilePath !== filePath) {
+          try {
+            fs.unlinkSync(uploadFilePath)
+          } catch {}
+        }
       }
     }
+    output.appendLine('全部上传完成')
+    output.show(true)
   })
 
   context.subscriptions.push(uploadDisposable)
