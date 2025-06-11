@@ -2,7 +2,7 @@
   "publisher": "xjccc",
   "name": "upload-to-alioss",
   "displayName": "upload-to-alioss",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "description": "it is a extension for users upload to ali oss",
   "repository": {
     "type": "git",
